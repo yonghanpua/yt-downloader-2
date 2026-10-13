@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# YT Downloader
+
+A self-hosted YouTube downloader web app built with Next.js. Paste a YouTube URL, view video info, and download in various qualities.
+
+## Features
+
+- Paste any YouTube URL to fetch video metadata (title, thumbnail, duration, views)
+- Download video in multiple qualities (360p to 4K) as MP4
+- Download audio only as M4A
+- Download progress indicator with byte counts and percentage
+- One-click yt-dlp update from the web UI
+- Dark theme UI
+- Docker-ready for self-hosting
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 22+
+- Python 3 (required by yt-dlp)
+- ffmpeg (required for merging video + audio tracks)
+
+### Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Docker (recommended)
 
-## Learn More
+```bash
+docker build -t yt-downloader .
+docker run -d --name yt-downloader -p 3000:3000 --restart unless-stopped yt-downloader
+```
 
-To learn more about Next.js, take a look at the following resources:
+The Docker image includes Python 3 and ffmpeg.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Accessing from anywhere
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Reverse proxy (Caddy)** — auto HTTPS with a domain name:
 
-## Deploy on Vercel
+```
+yourdomain.com {
+    reverse_proxy localhost:3000
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Then port-forward 80/443 on your router to the server.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Cloudflare Tunnel** — expose the app without opening any ports:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+**Tailscale / ZeroTier** — access via VPN IP without port forwarding. Most secure, but requires the VPN client on each device.
+
+### Updating
+
+```bash
+docker stop yt-downloader && docker rm yt-downloader
+docker build -t yt-downloader .
+docker run -d --name yt-downloader -p 3000:3000 --restart unless-stopped yt-downloader
+```
+
+## Tech Stack
+
+- [Next.js](https://nextjs.org) with App Router
+- [Tailwind CSS](https://tailwindcss.com) v4
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) via `youtube-dl-exec`
