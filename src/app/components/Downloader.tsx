@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useCallback, FormEvent } from "react";
 
 interface VideoInfo {
   title: string;
@@ -9,6 +9,13 @@ interface VideoInfo {
   author: string;
   viewCount: number;
   availableQualities: number[];
+}
+
+interface DownloadState {
+  status: "idle" | "downloading" | "done" | "error";
+  progress: number;
+  received: number;
+  total: number;
 }
 
 function formatDuration(seconds: number) {
@@ -23,6 +30,13 @@ function formatViews(count: number) {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M views`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K views`;
   return `${count} views`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function DownloadIcon() {
@@ -66,6 +80,49 @@ function Spinner() {
         fill="currentColor"
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
       />
+    </svg>
+  );
+}
+
+function SmallSpinner() {
+  return (
+    <svg
+      className="animate-spin h-4 w-4"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="20 6 9 17 4 12" />
     </svg>
   );
 }
@@ -114,26 +171,77 @@ function DownloadRow({
   sublabel,
   icon,
   href,
+  downloadKey,
+  downloads,
+  onDownload,
 }: {
   label: string;
   sublabel: string;
   icon: React.ReactNode;
   href: string;
+  downloadKey: string;
+  downloads: Record<string, DownloadState>;
+  onDownload: (key: string, href: string) => void;
 }) {
+  const state = downloads[downloadKey];
+  const isDownloading = state?.status === "downloading";
+  const isDone = state?.status === "done";
+  const isError = state?.status === "error";
+
   return (
-    <a
-      href={href}
-      className="flex items-center justify-between px-4 py-3 rounded-lg bg-input-bg hover:bg-input-border transition-colors group"
-    >
-      <div className="flex items-center gap-3">
-        <span className="text-muted">{icon}</span>
-        <span className="font-medium text-sm">{label}</span>
-        <span className="text-xs text-muted">{sublabel}</span>
-      </div>
-      <span className="text-muted group-hover:text-accent transition-colors">
-        <DownloadIcon />
-      </span>
-    </a>
+    <div className="relative">
+      <button
+        onClick={() => onDownload(downloadKey, href)}
+        disabled={isDownloading}
+        className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-input-bg hover:bg-input-border disabled:hover:bg-input-bg transition-colors group text-left relative overflow-hidden"
+      >
+        {isDownloading && state.total > 0 && (
+          <div
+            className="absolute inset-0 bg-accent/10 transition-all duration-300"
+            style={{ width: `${state.progress}%` }}
+          />
+        )}
+        <div className="flex items-center gap-3 relative z-10">
+          <span className="text-muted">{icon}</span>
+          <span className="font-medium text-sm">{label}</span>
+          <span className="text-xs text-muted">{sublabel}</span>
+        </div>
+        <div className="flex items-center gap-2 relative z-10">
+          {isDownloading && (
+            <span className="text-xs text-muted">
+              {state.total > 0
+                ? `${formatBytes(state.received)} / ${formatBytes(state.total)} · ${state.progress}%`
+                : `${formatBytes(state.received)} downloaded`}
+            </span>
+          )}
+          {isDone && (
+            <span className="text-xs text-green-400">Complete</span>
+          )}
+          {isError && (
+            <span className="text-xs text-red-400">Failed — retry</span>
+          )}
+          <span
+            className={
+              isDownloading
+                ? "text-accent"
+                : isDone
+                  ? "text-green-400"
+                  : isError
+                    ? "text-red-400"
+                    : "text-muted group-hover:text-accent transition-colors"
+            }
+          >
+            {isDownloading ? (
+              <SmallSpinner />
+            ) : isDone ? (
+              <CheckIcon />
+            ) : (
+              <DownloadIcon />
+            )}
+          </span>
+        </div>
+      </button>
+    </div>
   );
 }
 
@@ -142,6 +250,7 @@ export default function Downloader() {
   const [loading, setLoading] = useState(false);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [error, setError] = useState("");
+  const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -150,6 +259,7 @@ export default function Downloader() {
     setLoading(true);
     setError("");
     setVideoInfo(null);
+    setDownloads({});
 
     try {
       const res = await fetch("/api/info", {
@@ -171,6 +281,78 @@ export default function Downloader() {
       setLoading(false);
     }
   }
+
+  const handleDownload = useCallback(
+    async (key: string, href: string) => {
+      if (downloads[key]?.status === "downloading") return;
+
+      setDownloads((prev) => ({
+        ...prev,
+        [key]: { status: "downloading", progress: 0, received: 0, total: 0 },
+      }));
+
+      try {
+        const res = await fetch(href);
+
+        if (!res.ok) {
+          throw new Error("Download failed");
+        }
+
+        const contentLength = res.headers.get("Content-Length");
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+        const contentDisposition = res.headers.get("Content-Disposition");
+        const filenameMatch = contentDisposition?.match(
+          /filename="?([^";\n]+)"?/,
+        );
+        const filename = filenameMatch?.[1] || "download";
+
+        setDownloads((prev) => ({
+          ...prev,
+          [key]: { status: "downloading", progress: 0, received: 0, total },
+        }));
+
+        const reader = res.body!.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          received += value.length;
+
+          const progress = total > 0 ? Math.round((received / total) * 100) : 0;
+
+          setDownloads((prev) => ({
+            ...prev,
+            [key]: { status: "downloading", progress, received, total },
+          }));
+        }
+
+        const blob = new Blob(chunks as BlobPart[]);
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+
+        setDownloads((prev) => ({
+          ...prev,
+          [key]: { status: "done", progress: 100, received, total },
+        }));
+      } catch {
+        setDownloads((prev) => ({
+          ...prev,
+          [key]: { status: "error", progress: 0, received: 0, total: 0 },
+        }));
+      }
+    },
+    [downloads],
+  );
 
   const encodedUrl = encodeURIComponent(url.trim());
 
@@ -242,6 +424,9 @@ export default function Downloader() {
                   sublabel="MP4"
                   icon={<VideoIcon />}
                   href={`/api/download?url=${encodedUrl}&quality=${q}&type=video`}
+                  downloadKey={`video-${q}`}
+                  downloads={downloads}
+                  onDownload={handleDownload}
                 />
               ))}
             </div>
@@ -257,6 +442,9 @@ export default function Downloader() {
                 sublabel="M4A"
                 icon={<AudioIcon />}
                 href={`/api/download?url=${encodedUrl}&type=audio`}
+                downloadKey="audio"
+                downloads={downloads}
+                onDownload={handleDownload}
               />
             </div>
           </div>
